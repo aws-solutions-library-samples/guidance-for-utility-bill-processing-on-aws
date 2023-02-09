@@ -1,0 +1,17 @@
+{
+  "name": "invoicepostprocessing",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Ryan Burke",
+  "license": "MIT-0",
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.109"
+  },
+  "dependencies": {
+    "@aws-sdk/client-textract": "^3.257.0"
+  }
+}
