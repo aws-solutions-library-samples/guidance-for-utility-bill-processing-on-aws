@@ -14,6 +14,15 @@ The following diagram depicts the state machine in AWS Step Functions deployed b
 
 ![SFN architecture](/assets/SFN-architecture.png)
 
+### Project folder structure
+
+- assets - graphics used in this README
+- deployment - empty, CDK synthesizes stack here for deployment
+- source
+  - bin - stores TypeScript app invoked by CDK
+  - lib - stores stack and construct definitions in TypeScript
+  - packages - Lambda sources used in this stack
+
 ## Getting started
 
 ### Prerequisites
