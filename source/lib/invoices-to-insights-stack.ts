@@ -77,6 +77,12 @@ export class InvoicesToInsightsStack extends cdk.Stack {
       ],
     });
 
+    new cdk.CfnOutput(this, "bucketName", {
+      value: bucket.bucketName,
+      description: "Bucket to upload invoices",
+      exportName: "invoiceBucket",
+    });
+
     // cdk-nag suppressions
     NagSuppressions.addResourceSuppressionsByPath(
       this,
