@@ -83,6 +83,8 @@ export class InvoicesToInsightsStack extends cdk.Stack {
       exportName: "invoiceBucket",
     });
 
+    this.templateOptions.description = "Solution ID: SO9158";
+
     // cdk-nag suppressions
     NagSuppressions.addResourceSuppressionsByPath(
       this,
