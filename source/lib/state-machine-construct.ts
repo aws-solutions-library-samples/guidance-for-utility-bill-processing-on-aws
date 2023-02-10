@@ -14,6 +14,7 @@ import {
   LogLevel,
   StateMachine,
   Succeed,
+  TaskInput,
   Wait,
   WaitTime,
 } from "aws-cdk-lib/aws-stepfunctions";
@@ -47,6 +48,41 @@ export class InvoiceStateMachine extends Construct {
 
   constructor(scope: Construct, id: string, props: StateMachineProps) {
     super(scope, id);
+
+    const checkTextractJobStatusFunction = new NodejsFunction(
+      this,
+      "CheckTextractJobStatusFunction",
+      {
+        architecture: Architecture.ARM_64,
+        entry: path.join(
+          __dirname,
+          "/../packages/checkTextractJobStatus/index.ts"
+        ),
+        memorySize: 512,
+        runtime: Runtime.NODEJS_18_X,
+        environmentEncryption: new Key(
+          this,
+          "CheckTextractJobStatusFunctionKey",
+          {
+            enableKeyRotation: true,
+          }
+        ),
+        reservedConcurrentExecutions: 100,
+        deadLetterQueue: props.dlq,
+        tracing: Tracing.ACTIVE,
+      }
+    );
+
+    checkTextractJobStatusFunction.addToRolePolicy(
+      new PolicyStatement({
+        actions: [
+          "textract:GetDocumentAnalysis",
+          "textract:GetExpenseAnalysis",
+        ],
+        resources: ["*"],
+        effect: Effect.ALLOW,
+      })
+    );
 
     const invoicePostProcessingFunction = new NodejsFunction(
       this,
@@ -177,21 +213,20 @@ export class InvoiceStateMachine extends Construct {
       )
       .otherwise(new Fail(this, "FailedTextractQuery"));
 
-    const getDocumentAnalysisBranch = new tasks.CallAwsService(
+    const getDocumentAnalysisBranch = new tasks.LambdaInvoke(
       this,
       "GetDocumentAnalysisStep",
       {
-        iamResources: ["*"],
-        service: "textract",
-        action: "getDocumentAnalysis",
-        parameters: {
+        lambdaFunction: checkTextractJobStatusFunction,
+        payload: TaskInput.fromObject({
           "JobId.$": "$.queries.Payload.documentAnalysisJobId",
-          MaxResults: 1,
-        },
+          API: "AnalyzeDocument",
+        }),
         resultPath: "$.documentAnalysis.status",
         resultSelector: {
           "JobStatus.$": "$.JobStatus",
         },
+        payloadResponseOnly: true,
       }
     ).next(documentAnalysisChoice);
 
@@ -219,22 +254,20 @@ export class InvoiceStateMachine extends Construct {
         .otherwise(postProcessingSteps)
     );
 
-    const getExpenseAnalysisStep = new tasks.CallAwsService(
+    const getExpenseAnalysisStep = new tasks.LambdaInvoke(
       this,
       "GetExpenseAnalysis",
       {
-        iamResources: ["*"],
-        service: "textract",
-        action: "getExpenseAnalysis",
-        inputPath: "$.expenseAnalysis.id",
-        parameters: {
-          "JobId.$": "$.JobId",
-          MaxResults: 1,
-        },
+        lambdaFunction: checkTextractJobStatusFunction,
+        payload: TaskInput.fromObject({
+          "JobId.$": "$.expenseAnalysis.id.JobId",
+          API: "AnalyzeExpense",
+        }),
         resultPath: "$.expenseAnalysis.status",
         resultSelector: {
           "JobStatus.$": "$.JobStatus",
         },
+        payloadResponseOnly: true,
       }
     );
 

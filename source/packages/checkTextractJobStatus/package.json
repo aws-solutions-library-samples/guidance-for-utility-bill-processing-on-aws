@@ -1,7 +1,7 @@
 {
-  "name": "invoicepostprocessing",
+  "name": "checktextractjobstatus",
   "version": "1.0.0",
-  "description": "Business logic for wrangling Textract responses into a normalized data schema for output",
+  "description": "Simple Lambda to wrap calls to Textract",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"

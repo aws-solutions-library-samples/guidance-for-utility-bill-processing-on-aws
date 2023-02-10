@@ -163,6 +163,29 @@ export class InvoicesToInsightsStack extends cdk.Stack {
 
     NagSuppressions.addResourceSuppressionsByPath(
       this,
+      "/InvoicesToInsightsStack/InvoiceStateMachine/CheckTextractJobStatusFunction/ServiceRole/Resource",
+      [
+        {
+          id: "AwsSolutions-IAM4",
+          reason: "Default AWS managed Lambda basic execution role is suitable",
+        },
+      ]
+    );
+
+    NagSuppressions.addResourceSuppressionsByPath(
+      this,
+      "/InvoicesToInsightsStack/InvoiceStateMachine/CheckTextractJobStatusFunction/ServiceRole/DefaultPolicy/Resource",
+      [
+        {
+          id: "AwsSolutions-IAM5",
+          reason:
+            "Suppressing wildcard resource rule because textract policies don't support anything more specific",
+        },
+      ]
+    );
+
+    NagSuppressions.addResourceSuppressionsByPath(
+      this,
       "/InvoicesToInsightsStack/InvoiceStateMachine/StateMachine/Role/DefaultPolicy/Resource",
       [
         {
