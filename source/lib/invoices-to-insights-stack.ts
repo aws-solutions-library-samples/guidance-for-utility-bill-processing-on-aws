@@ -27,6 +27,7 @@ export class InvoicesToInsightsStack extends cdk.Stack {
       enforceSSL: true,
       versioned: true,
       removalPolicy: RemovalPolicy.DESTROY,
+      autoDeleteObjects: true,
       eventBridgeEnabled: true,
       serverAccessLogsPrefix: "accesslog/",
       lifecycleRules: [
