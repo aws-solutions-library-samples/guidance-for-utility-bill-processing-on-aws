@@ -52,7 +52,7 @@ To process an invoice through this sample, you will need to upload a PDF invoice
 
 You can get the name of the deployed bucket from the CloudFormation output called "invoiceBucket" that appears after running `cdk deploy`. You can also find it in the CloudFormation management console, or looking in your list of S3 buckets for the one prefixed "invoicestoinsightsstack-invoicesbucket".
 
-If you have the [AWS CLI installed](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html), this command will put an invoice named `sample-invoice.pdf` in the bucket (provided in the `assets/` folder), triggering the processing workflow:
+If you have the [AWS CLI installed](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html), run this command from the parent directory of this project to put an invoice named `sample-invoice.pdf` in the bucket (provided in the `assets/` folder), triggering the processing workflow:
 
 `aws s3 cp assets/sample-invoice.pdf s3://YOUR-BUCKET-NAME/input/sample-invoice.pdf`
 
