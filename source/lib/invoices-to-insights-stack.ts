@@ -17,6 +17,10 @@ export class InvoicesToInsightsStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
+    // Note that all bucket contents are destroyed when the
+    // stack is removed!
+    // Note that invoices and any other objects uploaded
+    // to the input/ prefix will be expired after 1 day.
     const bucket = new Bucket(this, "InvoicesBucket", {
       blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
       encryption: BucketEncryption.S3_MANAGED,
@@ -25,6 +29,12 @@ export class InvoicesToInsightsStack extends cdk.Stack {
       removalPolicy: RemovalPolicy.DESTROY,
       eventBridgeEnabled: true,
       serverAccessLogsPrefix: "accesslog/",
+      lifecycleRules: [
+        {
+          expiration: Duration.days(1),
+          prefix: "input/",
+        },
+      ],
     });
 
     // This DLQ stores any failures throughout the project.
@@ -63,7 +73,7 @@ export class InvoicesToInsightsStack extends cdk.Stack {
             name: [bucket.bucketName],
           },
           object: {
-            key: [{ suffix: ".pdf" }],
+            key: [{ prefix: "input/" }],
           },
         },
         detailType: ["Object Created"],

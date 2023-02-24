@@ -16,7 +16,7 @@ The following diagram depicts the state machine in AWS Step Functions deployed b
 
 ### Project folder structure
 
-- assets - graphics used in this README
+- assets - graphics used in this README, sample invoice for testing
 - deployment - empty, CDK synthesizes stack here for deployment
 - source
   - bin - stores TypeScript app invoked by CDK
@@ -48,15 +48,15 @@ Once the deployment succeeds (you will need to accept the confirmation prompts o
 
 ## Using the sample
 
-To process an invoice through this sample, you will need to upload a PDF invoice to the deployed S3 bucket. You can do this from the AWS Management Console for S3, programmatically with the AWS SDK, or using the AWS CLI.
+To process an invoice through this sample, you will need to upload a PDF invoice to the deployed S3 bucket with an object prefix of `input/`. You can do this from the AWS Management Console for S3, programmatically with the AWS SDK, or using the AWS CLI.
 
 You can get the name of the deployed bucket from the CloudFormation output called "invoiceBucket" that appears after running `cdk deploy`. You can also find it in the CloudFormation management console, or looking in your list of S3 buckets for the one prefixed "invoicestoinsightsstack-invoicesbucket".
 
-If you have the [AWS CLI installed](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html), this command will put an invoice named `my-invoice.pdf` in the bucket, triggering the processing workflow:
+If you have the [AWS CLI installed](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html), this command will put an invoice named `sample-invoice.pdf` in the bucket (provided in the `assets/` folder), triggering the processing workflow:
 
-`aws s3 cp my-invoice.pdf s3://YOUR-BUCKET-NAME/my-invoice.pdf`
+`aws s3 cp assets/sample-invoice.pdf s3://YOUR-BUCKET-NAME/input/sample-invoice.pdf`
 
-After about 30 seconds, the normalized output can be found in the same S3 bucket at the path `s3://YOUR-BUCKET-NAME/output/my-invoice.pdf`. You can always find the results of processing by prefixing the invoice filename with `output/`.
+After about 30 seconds, the normalized output can be found in the same S3 bucket at the path `s3://YOUR-BUCKET-NAME/output/my-invoice.pdf.json`. You can always find the results of processing by changing the invoice filename prefix to `output/` from `input/`.
 
 ### Customizing pre-processing
 
@@ -77,6 +77,12 @@ You can also find the data schema used to write output back to the S3 bucket. Th
 ## Security
 
 See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.
+
+## Cleanup
+
+Note that tearing down the stack will destroy ALL contents of the S3 bucket!
+
+To remove the sample stack from your AWS account, you can run the `cdk destroy` command or terminate the stack in the AWS management console from Amazon CloudFormation.
 
 ## License
 
