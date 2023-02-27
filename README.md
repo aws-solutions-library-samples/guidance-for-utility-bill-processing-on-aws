@@ -82,7 +82,7 @@ See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more inform
 
 Note that tearing down the stack will destroy ALL contents of the S3 bucket!
 
-To remove the sample stack from your AWS account, you can run the `cdk destroy` command or terminate the stack in the AWS management console from Amazon CloudFormation.
+To remove the sample stack from your AWS account, you can run the `cdk destroy` command from within the `source/` directory, or terminate the stack in the AWS management console from Amazon CloudFormation.
 
 ## License
 
