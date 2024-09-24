@@ -59,7 +59,7 @@ export class InvoiceStateMachine extends Construct {
           "/../packages/checkTextractJobStatus/index.ts"
         ),
         memorySize: 512,
-        runtime: Runtime.NODEJS_18_X,
+        runtime: Runtime.NODEJS_20_X,
         environmentEncryption: new Key(
           this,
           "CheckTextractJobStatusFunctionKey",
@@ -94,7 +94,7 @@ export class InvoiceStateMachine extends Construct {
           "/../packages/invoicePostProcessing/index.ts"
         ),
         memorySize: 1024,
-        runtime: Runtime.NODEJS_18_X,
+        runtime: Runtime.NODEJS_20_X,
         environmentEncryption: new Key(
           this,
           "InvoicePostProcessingFunctionKey",
@@ -126,7 +126,7 @@ export class InvoiceStateMachine extends Construct {
         architecture: Architecture.ARM_64,
         entry: path.join(__dirname, "/../packages/startQueries/index.ts"),
         memorySize: 1024,
-        runtime: Runtime.NODEJS_18_X,
+        runtime: Runtime.NODEJS_20_X,
         environmentEncryption: new Key(this, "StartQueriesFunctionKey", {
           enableKeyRotation: true,
         }),

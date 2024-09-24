@@ -111,7 +111,7 @@ const extractValuesFromAnalyzeExpense = (
           (a.ValueDetection?.Confidence || 0)
       );
     return (
-      vendorNameResultsSortedByConfidence[0].ValueDetection?.Text || "undefined"
+      vendorNameResultsSortedByConfidence[0]?.ValueDetection?.Text || "undefined"
     );
   };
 
