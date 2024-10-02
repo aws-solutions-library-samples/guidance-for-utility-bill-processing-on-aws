@@ -1,0 +1,22 @@
+Provide a JSON output using only the information prvoided from a utility bills.  If the answer is not provided, or you are unsure, provide the value "unknown".
+Include the following keys in your output.  There are instructions in parenthesis for how to determine the value for each key.
+
+  * name
+  * street_address (number and street name only)
+  * city
+  * state
+  * zip_code
+  * utility_name
+  * account_id
+  * kwh_used_this_month
+  * kwh_used_in_the_past_year (the annual kilowatt hours of electricity used on a yearly basis)
+  * current_monthly_cost
+  * due_date
+  * rate_per_kwh  (the rate paid on this bill for each kilowatt hour of power consumed)
+  * tou  (contains true or false indicated if the user has Time of Use or TOU electricity.  This is when they pay different rates for kwh of electricity depending on the time of day.  This may also be indicated by different types of rates such as peak, off-peark, etc.)
+  * solar (contains true or false indicating if the user has solar electricity.  This may be indicated by mention of kwh to the grid, production, customer generation, or net metering)
+  
+Only output the JSON on a single line (no newlines) and nothing else.
+
+Use utility bill provided below:
+-----

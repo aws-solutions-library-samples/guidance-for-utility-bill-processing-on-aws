@@ -1,6 +1,6 @@
 import * as cdk from "aws-cdk-lib";
 import { Duration, RemovalPolicy } from "aws-cdk-lib";
-import { Rule } from "aws-cdk-lib/aws-events";
+import { Rule, RuleTargetInput, EventField } from "aws-cdk-lib/aws-events";
 import * as targets from "aws-cdk-lib/aws-events-targets";
 import {
   BlockPublicAccess,
@@ -20,7 +20,7 @@ export class InvoicesToInsightsStack extends cdk.Stack {
     // Note that all bucket contents are destroyed when the
     // stack is removed!
     // Note that invoices and any other objects uploaded
-    // to the input/ prefix will be expired after 1 day.
+    // to the input/ and wip/ prefixes will be expired after 1 day.
     const bucket = new Bucket(this, "InvoicesBucket", {
       blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
       encryption: BucketEncryption.S3_MANAGED,
@@ -34,6 +34,10 @@ export class InvoicesToInsightsStack extends cdk.Stack {
         {
           expiration: Duration.days(1),
           prefix: "input/",
+        },
+        {
+          expiration: Duration.days(1),
+          prefix: "wip/",
         },
       ],
     });
@@ -84,6 +88,10 @@ export class InvoicesToInsightsStack extends cdk.Stack {
           retryAttempts: 1,
           maxEventAge: Duration.minutes(5),
           deadLetterQueue: dlq,
+          input: RuleTargetInput.fromObject({
+            bucket: EventField.fromPath('$.detail.bucket.name'),
+            key: EventField.fromPath('$.detail.object.key')
+          })
         }),
       ],
     });
@@ -121,81 +129,71 @@ export class InvoicesToInsightsStack extends cdk.Stack {
       ]
     );
 
+    NagSuppressions.addResourceSuppressionsByPath(
+      this,
+      "/InvoicesToInsightsStack/InvoiceStateMachine/PdfToImageFunction/ServiceRole/Resource",
+      [
+        {
+          id: "AwsSolutions-IAM4",
+          reason:
+            "Suppressing AWS managed policy warning as the Basic Execution Role for Lambda has very limited permissions as is.",
+        },
+      ]
+    );
+
+    NagSuppressions.addResourceSuppressionsByPath(
+      this,
+      "/InvoicesToInsightsStack/InvoiceStateMachine/PdfToImageFunction/Resource",
+      [
+        {
+          'id': 'AwsSolutions-L1',
+          'reason': 'Suppress error as python 3_12 is the latest runtime available'
+        },
+      ]
+    );
+
+    NagSuppressions.addResourceSuppressionsByPath(
+      this,
+      "/InvoicesToInsightsStack/InvoiceStateMachine/PdfToImageFunction/ServiceRole/DefaultPolicy/Resource",
+      [
+        {
+          id: "AwsSolutions-IAM5",
+          reason:
+            "Suppressing AWS managed policy warning as the Basic Execution Role for Lambda has very limited permissions as is.",
+        },
+      ]
+    );
+
+    NagSuppressions.addResourceSuppressionsByPath(
+      this,
+      "/InvoicesToInsightsStack/InvoiceStateMachine/BedrockInputFunction/ServiceRole/Resource",
+      [
+        {
+          id: "AwsSolutions-IAM4",
+          reason:
+            "Suppressing AWS managed policy warning as the Basic Execution Role for Lambda has very limited permissions as is.",
+        },
+      ]
+    );
+
+    NagSuppressions.addResourceSuppressionsByPath(
+      this,
+      "/InvoicesToInsightsStack/InvoiceStateMachine/BedrockInputFunction/ServiceRole/DefaultPolicy/Resource",
+      [
+        {
+          id: "AwsSolutions-IAM5",
+          reason:
+            "Suppressing AWS managed policy warning as the Basic Execution Role for Lambda has very limited permissions as is.",
+        },
+      ]
+    );
+
     NagSuppressions.addResourceSuppressions(dlq, [
       {
         id: "AwsSolutions-SQS3",
         reason: "Resource is a DLQ, does not need a DLQ.",
       },
     ]);
-
-    NagSuppressions.addResourceSuppressionsByPath(
-      this,
-      "/InvoicesToInsightsStack/InvoiceStateMachine/InvoicePostProcessingFunction/ServiceRole/Resource",
-      [
-        {
-          id: "AwsSolutions-IAM4",
-          reason: "Default AWS managed Lambda basic execution role is suitable",
-        },
-      ]
-    );
-
-    NagSuppressions.addResourceSuppressionsByPath(
-      this,
-      "/InvoicesToInsightsStack/InvoiceStateMachine/InvoicePostProcessingFunction/ServiceRole/DefaultPolicy/Resource",
-      [
-        {
-          id: "AwsSolutions-IAM5",
-          reason:
-            "Suppressing wildcard resource rule because textract policies don't support anything more specific",
-        },
-      ]
-    );
-
-    NagSuppressions.addResourceSuppressionsByPath(
-      this,
-      "/InvoicesToInsightsStack/InvoiceStateMachine/StartQueriesFunction/ServiceRole/Resource",
-      [
-        {
-          id: "AwsSolutions-IAM4",
-          reason: "Default AWS managed Lambda basic execution role is suitable",
-        },
-      ]
-    );
-
-    NagSuppressions.addResourceSuppressionsByPath(
-      this,
-      "/InvoicesToInsightsStack/InvoiceStateMachine/StartQueriesFunction/ServiceRole/DefaultPolicy/Resource",
-      [
-        {
-          id: "AwsSolutions-IAM5",
-          reason:
-            "Suppressing wildcard resource rule because textract policies don't support anything more specific",
-        },
-      ]
-    );
-
-    NagSuppressions.addResourceSuppressionsByPath(
-      this,
-      "/InvoicesToInsightsStack/InvoiceStateMachine/CheckTextractJobStatusFunction/ServiceRole/Resource",
-      [
-        {
-          id: "AwsSolutions-IAM4",
-          reason: "Default AWS managed Lambda basic execution role is suitable",
-        },
-      ]
-    );
-
-    NagSuppressions.addResourceSuppressionsByPath(
-      this,
-      "/InvoicesToInsightsStack/InvoiceStateMachine/CheckTextractJobStatusFunction/ServiceRole/DefaultPolicy/Resource",
-      [
-        {
-          id: "AwsSolutions-IAM5",
-          reason:
-            "Suppressing wildcard resource rule because textract policies don't support anything more specific",
-        },
-      ]
-    );
 
     NagSuppressions.addResourceSuppressionsByPath(
       this,

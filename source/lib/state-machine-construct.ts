@@ -1,22 +1,22 @@
 import * as cdk from "aws-cdk-lib";
 import { Duration } from "aws-cdk-lib";
+import { FoundationModel, FoundationModelIdentifier } from "aws-cdk-lib/aws-bedrock";
 import { Effect, PolicyStatement, ServicePrincipal } from "aws-cdk-lib/aws-iam";
 import { Key } from "aws-cdk-lib/aws-kms";
-import { Architecture, Runtime, Tracing } from "aws-cdk-lib/aws-lambda";
+import { Architecture, Runtime, RuntimeFamily, Tracing, Function } from "aws-cdk-lib/aws-lambda";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import { LogGroup } from "aws-cdk-lib/aws-logs";
 import { Bucket } from "aws-cdk-lib/aws-s3";
 import { Queue } from "aws-cdk-lib/aws-sqs";
+import * as lambda from 'aws-cdk-lib/aws-lambda';
 import {
-  Choice,
-  Condition,
-  Fail,
   LogLevel,
   StateMachine,
-  Succeed,
-  TaskInput,
-  Wait,
-  WaitTime,
+  CustomState,
+  DefinitionBody,
+  Pass,
+  JsonPath,
+  TaskInput
 } from "aws-cdk-lib/aws-stepfunctions";
 import * as tasks from "aws-cdk-lib/aws-stepfunctions-tasks";
 import { Construct } from "constructs";
@@ -27,10 +27,8 @@ export interface StateMachineProps {
   bucket: Bucket;
 }
 
-// Normal use of Textract takes a few seconds (up to 30s) for
-// asynchronous jobs. You can edit this value as you see fit,
-// though anything over 30s should be superfluous.
-const TEXTRACT_WAIT_DELAY_IN_S: cdk.Duration = Duration.seconds(15);
+// Change Bedrock Model by customizing this string.  See https://docs.aws.amazon.com/bedrock/latest/userguide/model-ids.html
+const MODEL_ID = 'anthropic.claude-3-sonnet-20240229-v1:0'
 
 /**
  * Creates a state machine in AWS Step Functions for processing
@@ -49,276 +47,111 @@ export class InvoiceStateMachine extends Construct {
   constructor(scope: Construct, id: string, props: StateMachineProps) {
     super(scope, id);
 
-    const checkTextractJobStatusFunction = new NodejsFunction(
-      this,
-      "CheckTextractJobStatusFunction",
-      {
-        architecture: Architecture.ARM_64,
-        entry: path.join(
-          __dirname,
-          "/../packages/checkTextractJobStatus/index.ts"
-        ),
-        memorySize: 512,
-        runtime: Runtime.NODEJS_18_X,
-        environmentEncryption: new Key(
-          this,
-          "CheckTextractJobStatusFunctionKey",
-          {
-            enableKeyRotation: true,
+    
+    const bedrockModelArn =  FoundationModel.fromFoundationModelId(this, 'BedrockFMId', new FoundationModelIdentifier(MODEL_ID)).modelArn
+
+    // import file prompt.txt into variable promptText
+    const promptText = require('fs').readFileSync(path.join(__dirname, '../prompt.txt'), 'utf8');
+
+    const pdfToImageFunction = new Function(this, "PdfToImageFunction", {
+      memorySize: 3008,
+      timeout: cdk.Duration.minutes(3),
+      runtime: Runtime.PYTHON_3_12,
+      handler: "index.handler",
+      code: cdk.aws_lambda.Code.fromAsset(
+        path.join(__dirname, "/../packages/pdfToImage"), {
+          bundling: {
+            image:  (new Runtime('python3.12:latest-x86_64', RuntimeFamily.PYTHON)).bundlingImage,
+            command: [
+              'bash', '-c', [
+                'pip install -r requirements.txt -t /asset-output',
+                'cp -r /asset-input/* /asset-output/'
+              ].join(' && ')
+            ]
           }
-        ),
-        reservedConcurrentExecutions: 100,
-        deadLetterQueue: props.dlq,
-        tracing: Tracing.ACTIVE,
+        }
+      ),
+      tracing: Tracing.ACTIVE,
+    });
+
+    props.bucket.grantRead(pdfToImageFunction, 'input/*');
+    props.bucket.grantWrite(pdfToImageFunction, 'wip/*');
+
+
+    const prepBedrockInputFunction = new NodejsFunction(this, "BedrockInputFunction", {
+      memorySize: 512,
+      timeout: cdk.Duration.seconds(30),
+      runtime: lambda.Runtime.NODEJS_20_X,
+      architecture: Architecture.ARM_64,
+      handler: "handler",
+      entry: path.join(__dirname, "/../packages/bedrockInput/index.ts"),
+      tracing: Tracing.ACTIVE,
+      environmentEncryption: new Key(this, "StartQueriesFunctionKey", {
+        enableKeyRotation: true,
+      }),
+      environment: {
+        "BUCKET_NAME": props.bucket.bucketName,
+        "DEFAULT_PROMPT_TEXT": promptText
       }
-    );
+    });
 
-    checkTextractJobStatusFunction.addToRolePolicy(
-      new PolicyStatement({
-        actions: [
-          "textract:GetDocumentAnalysis",
-          "textract:GetExpenseAnalysis",
-        ],
-        resources: ["*"],
-        effect: Effect.ALLOW,
-      })
-    );
+    props.bucket.grantReadWrite(prepBedrockInputFunction, 'wip/*')
 
-    const invoicePostProcessingFunction = new NodejsFunction(
-      this,
-      "InvoicePostProcessingFunction",
-      {
-        architecture: Architecture.ARM_64,
-        entry: path.join(
-          __dirname,
-          "/../packages/invoicePostProcessing/index.ts"
-        ),
-        memorySize: 1024,
-        runtime: Runtime.NODEJS_18_X,
-        environmentEncryption: new Key(
-          this,
-          "InvoicePostProcessingFunctionKey",
-          {
-            enableKeyRotation: true,
+    const pdfToImageTask = new tasks.LambdaInvoke(this, 'convertPDF', {
+      lambdaFunction: pdfToImageFunction,
+      payloadResponseOnly: true,
+      resultPath: '$.images'
+    })
+
+    const prepBedrockInputTask = new tasks.LambdaInvoke(this, 'prepBedrockInputTask', {
+      lambdaFunction: prepBedrockInputFunction,
+      payloadResponseOnly: true,
+    })
+
+    
+    const callBedrockTask = new CustomState(this, 'callBedrock', {
+      stateJson: {
+        Type: 'Task',
+        Resource: 'arn:aws:states:::bedrock:invokeModel',
+        Parameters: {
+          ModelId: bedrockModelArn,
+          Input: {
+            "S3Uri.$": "States.Format('s3://{}/{}', $.Bucket, $.Key)",
           }
-        ),
-        reservedConcurrentExecutions: 100,
-        deadLetterQueue: props.dlq,
-        tracing: Tracing.ACTIVE,
-      }
-    );
-
-    invoicePostProcessingFunction.addToRolePolicy(
-      new PolicyStatement({
-        actions: [
-          "textract:GetDocumentAnalysis",
-          "textract:GetExpenseAnalysis",
-        ],
-        resources: ["*"],
-        effect: Effect.ALLOW,
-      })
-    );
-
-    const startQueriesFunction = new NodejsFunction(
-      this,
-      "StartQueriesFunction",
-      {
-        architecture: Architecture.ARM_64,
-        entry: path.join(__dirname, "/../packages/startQueries/index.ts"),
-        memorySize: 1024,
-        runtime: Runtime.NODEJS_18_X,
-        environmentEncryption: new Key(this, "StartQueriesFunctionKey", {
-          enableKeyRotation: true,
-        }),
-        reservedConcurrentExecutions: 100,
-        deadLetterQueue: props.dlq,
-        tracing: Tracing.ACTIVE,
-      }
-    );
-
-    startQueriesFunction.addToRolePolicy(
-      new PolicyStatement({
-        actions: ["textract:StartDocumentAnalysis"],
-        resources: ["*"],
-        effect: Effect.ALLOW,
-      })
-    );
-
-    props.bucket.grantRead(startQueriesFunction);
-
-    const waitForTextractDocumentAnalysisStep = new Wait(
-      this,
-      "WaitForTextractDocumentAnalysis",
-      {
-        time: WaitTime.duration(TEXTRACT_WAIT_DELAY_IN_S),
-        comment:
-          "Allows time for Textract to process the invoice asynchronously before attempting to check if ready",
-      }
-    );
-
-    const waitForTextractExpenseAnalysisStep = new Wait(
-      this,
-      "WaitForTextractExpenseAnalysis",
-      {
-        time: WaitTime.duration(TEXTRACT_WAIT_DELAY_IN_S),
-        comment:
-          "Allows time for Textract to process the invoice asynchronously before attempting to check if ready",
-      }
-    );
-
-    const postProcessingSteps = new tasks.LambdaInvoke(
-      this,
-      "postProcessingLambdaStep",
-      {
-        lambdaFunction: invoicePostProcessingFunction,
-      }
-    )
-      .next(
-        new tasks.CallAwsService(this, "PutObjectStep", {
-          iamResources: [props.bucket.arnForObjects("*")],
-          service: "s3",
-          action: "putObject",
-          parameters: {
-            "Body.$": "$.Payload.invoiceOutput",
-            Bucket: props.bucket.bucketName,
-            "Key.$": "$.Payload.outputKey",
-          },
-        })
-      )
-      .next(new Succeed(this, "EndSuccessStep"));
-
-    const documentAnalysisChoice = new Choice(
-      this,
-      "EvaluateGetDocumentAnalysisReadiness"
-    )
-      .when(
-        Condition.or(
-          Condition.stringEquals(
-            "$.documentAnalysis.status.JobStatus",
-            "SUCCEEDED"
-          ),
-          Condition.stringEquals(
-            "$.documentAnalysis.status.JobStatus",
-            "PARTIAL_SUCCESS"
-          )
-        ),
-        postProcessingSteps
-      )
-      .when(
-        Condition.stringEquals(
-          "$.documentAnalysis.status.JobStatus",
-          "IN_PROGRESS"
-        ),
-        waitForTextractDocumentAnalysisStep
-      )
-      .otherwise(new Fail(this, "FailedTextractQuery"));
-
-    const getDocumentAnalysisBranch = new tasks.LambdaInvoke(
-      this,
-      "GetDocumentAnalysisStep",
-      {
-        lambdaFunction: checkTextractJobStatusFunction,
-        payload: TaskInput.fromObject({
-          "JobId.$": "$.queries.Payload.documentAnalysisJobId",
-          API: "AnalyzeDocument",
-        }),
-        resultPath: "$.documentAnalysis.status",
-        resultSelector: {
-          "JobStatus.$": "$.JobStatus",
         },
-        payloadResponseOnly: true,
+        OutputPath: '$.Body'
       }
-    ).next(documentAnalysisChoice);
+    })
 
-    waitForTextractDocumentAnalysisStep.next(getDocumentAnalysisBranch);
+    const extractBedrockResult = new Pass(this, 'extractBedrockResult', {
+      parameters: {
+        result: JsonPath.stringToJson(JsonPath.stringAt("$.content[0].text")),
+        metadata: JsonPath.executionInput
+      },
+    })
 
-    const startQueriesBranch = new tasks.LambdaInvoke(
-      this,
-      "startQueriesLambdaStep",
-      {
-        lambdaFunction: startQueriesFunction,
-        resultPath: "$.queries",
-        resultSelector: {
-          "Payload.$": "$.Payload",
-        },
-      }
-    ).next(
-      new Choice(this, "StartQueriesChoiceStep", {
-        comment:
-          "Check if we need to wait for another Textract job to finish or proceed to post processing",
-      })
-        .when(
-          Condition.booleanEquals("$.queries.Payload.waitForQuery", true),
-          waitForTextractDocumentAnalysisStep
-        )
-        .otherwise(postProcessingSteps)
-    );
+    const writeToS3 = new tasks.CallAwsService(this, "writeToS3", {
+      service: "s3",
+      action: "putObject",
+      parameters: {
+        Body: TaskInput.fromJsonPathAt("$.result").value,
+        Bucket: props.bucket.bucketName,
+        Key: JsonPath.format('output/{}.json', JsonPath.uuid())
+      },
+      iamResources: [props.bucket.arnForObjects("output/*")],
+      resultPath: JsonPath.DISCARD
+    })
 
-    const getExpenseAnalysisStep = new tasks.LambdaInvoke(
-      this,
-      "GetExpenseAnalysis",
-      {
-        lambdaFunction: checkTextractJobStatusFunction,
-        payload: TaskInput.fromObject({
-          "JobId.$": "$.expenseAnalysis.id.JobId",
-          API: "AnalyzeExpense",
-        }),
-        resultPath: "$.expenseAnalysis.status",
-        resultSelector: {
-          "JobStatus.$": "$.JobStatus",
-        },
-        payloadResponseOnly: true,
-      }
-    );
-
-    waitForTextractExpenseAnalysisStep.next(getExpenseAnalysisStep);
-
-    const evaluateGetExpenseAnalysisReadiness = new Choice(
-      this,
-      "EvaluateGetExpenseAnalysisReadiness"
-    )
-      .when(
-        Condition.or(
-          Condition.stringEquals(
-            "$.expenseAnalysis.status.JobStatus",
-            "SUCCEEDED"
-          ),
-          Condition.stringEquals(
-            "$.expenseAnalysis.status.JobStatus",
-            "PARTIAL_SUCCESS"
-          )
-        ),
-        startQueriesBranch
-      )
-      .when(
-        Condition.stringEquals(
-          "$.expenseAnalysis.status.JobStatus",
-          "IN_PROGRESS"
-        ),
-        waitForTextractExpenseAnalysisStep
-      )
-      .otherwise(new Fail(this, "FailedTextract"));
-
-    getExpenseAnalysisStep.next(evaluateGetExpenseAnalysisReadiness);
-
-    const preProcessingSteps = new tasks.CallAwsService(
-      this,
-      "StartExpenseAnalysis",
-      {
-        iamResources: ["*"],
-        service: "textract",
-        action: "startExpenseAnalysis",
-        parameters: {
-          DocumentLocation: {
-            S3Object: {
-              "Bucket.$": "$.detail.bucket.name",
-              "Name.$": "$.detail.object.key",
-            },
-          },
-        },
-        resultPath: "$.expenseAnalysis.id",
-      }
-    ).next(waitForTextractExpenseAnalysisStep);
+    const publishEvent = new tasks.EventBridgePutEvents(this, "publishEvent", {
+      entries: [
+        {
+          detail: TaskInput.fromJsonPathAt('$'),
+          detailType: "UtilityBillProcessed",
+          source: "invoice-to-insights"
+        }
+      ],
+      resultPath: JsonPath.DISCARD
+    })
 
     // new CloudWatch Logs group for the state machine
     const stateMachineLogsKey = new Key(this, "LogsEncryptionKey", {
@@ -328,6 +161,15 @@ export class InvoiceStateMachine extends Construct {
       encryptionKey: stateMachineLogsKey,
     });
 
+    const stateMachineDefintion = DefinitionBody.fromChainable(
+      pdfToImageTask
+      .next(prepBedrockInputTask)
+      .next(callBedrockTask)
+      .next(extractBedrockResult)
+      .next(writeToS3)
+      .next(publishEvent)
+    )
+
     this.stateMachine = new StateMachine(this, "StateMachine", {
       logs: {
         destination: stateMachineLogs,
@@ -335,8 +177,18 @@ export class InvoiceStateMachine extends Construct {
         includeExecutionData: true,
       },
       tracingEnabled: true,
-      definition: preProcessingSteps,
+      definitionBody: stateMachineDefintion
     });
+
+    // add bedrock policy since it does not use L2 construct
+    this.stateMachine.addToRolePolicy(
+      new cdk.aws_iam.PolicyStatement({
+        effect: cdk.aws_iam.Effect.ALLOW,
+        actions: ['bedrock:InvokeModel'],
+        resources: [bedrockModelArn]
+      })
+    )
+    props.bucket.grantRead(this.stateMachine, 'wip/*')
 
     stateMachineLogsKey.grantEncryptDecrypt(
       new ServicePrincipal(
